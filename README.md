@@ -12,6 +12,12 @@ purpose
  6) Use of CAD and 3D printers for hardware implementation and attempting production
  7) Improved ability to use C language and Raspberry Pi 4 used for technology implementation
  
-More details on the blog(Korean).
+ last.c <- This file is last code.
+
+The song was not included due to copyright issues.
+Object file has uploaded but If you have different Env, trying to compile as your Env.
+ 
+More details on the blog(Korean). Thank you.
+
 자세한 프로젝트 내용을 블로그에 작성해놓았습니다.
 
