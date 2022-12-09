@@ -1,0 +1,803 @@
+#include <wiringPi.h>
+#include <stdio.h>
+#include <lcd.h>
+#include <stdlib.h>
+#include <time.h> 
+#include <pthread.h>
+
+#define JUKE_NUM 3
+
+#define KEYPAD_PB1 2 //KEYPAD 포트 BT1 핀 정의
+#define KEYPAD_PB2 3 
+#define KEYPAD_PB3 4
+#define KEYPAD_PB4 17
+#define KEYPAD_PB5 27
+#define KEYPAD_PB6 22
+#define KEYPAD_PB7 10
+#define KEYPAD_PB8 9
+#define KEYPAD_PB9 11
+#define KEYPAD_PB10 5
+#define KEYPAD_PB11 6
+#define KEYPAD_PB12 13
+#define KEYPAD_PB13 19
+
+#define MAX_KEY_BT_NUM 13           //최대 키패드 개수
+const int KeypadTable[13] = { KEYPAD_PB1, KEYPAD_PB2, KEYPAD_PB3, KEYPAD_PB4, KEYPAD_PB5, KEYPAD_PB6,
+KEYPAD_PB7, KEYPAD_PB8, KEYPAD_PB9, KEYPAD_PB10, KEYPAD_PB11, KEYPAD_PB12, KEYPAD_PB13 }; //KEYPAD 핀 테이블 선언
+
+int KeypadRead(void)
+{
+	int i, nKeypadstate;
+	nKeypadstate = 0;
+	for (i = 0; i < MAX_KEY_BT_NUM; i++)
+	{
+		if (!digitalRead(KeypadTable[i]))
+		{
+			nKeypadstate |= (1 << i);
+		}
+	}
+	return nKeypadstate;
+}
+
+const int Keylist[13] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 };
+
+int KEY(int Inputkey) {
+    switch (Inputkey) {
+    case 1:
+        return Keylist[0];
+        break;
+    case 2:
+        return Keylist[1];
+        break;
+    case 4:
+        return Keylist[2];
+        break;
+    case 8:
+        return Keylist[3];
+        break;
+    case 16:
+        return Keylist[4];
+        break;
+    case 32:
+        return Keylist[5];
+        break;
+    case 64:
+        return Keylist[6];
+        break;
+    case 128:
+        return Keylist[7];
+        break;
+    case 256:
+        return Keylist[8];
+        break;
+    case 512:
+        return Keylist[9];
+        break;
+    case 1024:
+        return Keylist[10];
+        break;
+    case 2048:
+        return Keylist[11];
+        break;
+    case 4096:
+        return Keylist[12];
+        break;
+    }
+    return 0;
+}
+
+void* drum1(void* args)
+{
+    system("omxplayer -o local Kick.wav");
+}
+
+void* drum2(void* args)
+{
+    system("omxplayer -o local C_Hat.wav");
+}
+
+void* drum3(void* args)
+{
+    system("omxplayer -o local L_Crash.wav");
+}
+
+void* drum4(void* args)
+{
+    system("omxplayer -o local M_Tom.mp3");
+}
+
+void* drum5(void* args)
+{
+    system("omxplayer -o local F_Tom.mp3");
+}
+
+void* drum6(void* args)
+{
+    system("omxplayer -o local piano01_do.mp3 &");
+}
+
+void* drum7(void* args)
+{
+    system("omxplayer -o local piano03_re.mp3 &");
+}
+
+void* drum8(void* args)
+{
+    system("omxplayer -o local piano05_mi.mp3 &");
+}
+
+void play_drum(int key_value) {
+    switch (key_value) {
+    case 6:
+        system("omxplayer -o local Kick.wav &");
+        break;
+    case 7:
+        system("omxplayer -o local C_Hat.wav &");
+        break;
+    case 8:
+        system("omxplayer -o local L_Crash.wav &");
+        break;
+    case 9:
+        system("omxplayer -o local M_Tom.mp3 &");
+        break;
+    case 10:
+        system("omxplayer -o local F_Tom.mp3 &");
+        break;
+    case 11:
+        system("omxplayer -o local piano01_do.mp3 &");
+        break;
+    case 12:
+        system("omxplayer -o local piano03_re.mp3 &");
+        break;
+    case 13:
+        system("omxplayer -o local piano05_mi.mp3 &");
+        break;
+    }
+}
+
+int main()
+{
+	int go = 0;
+
+	if (wiringPiSetupGpio() == -1) 
+		return 1;
+
+	int i;
+	int cur=0;
+	int nKeypadstate;
+	int past_key = 0;
+	int pre_val =0, val = 0;// random joobok bangji
+
+	int KEYPAD_PB[11];
+    int KEYPAD_PB_old[11];
+
+	pthread_t pthread[8];
+	int thr_id;
+	char p1[] = "thread_1";
+	char p2[] = "thread_2";
+	char p3[] = "thread_3";
+	char p4[] = "thread_4";
+	char p5[] = "thread_5";
+	char p6[] = "thread_6";
+	char p7[] = "thread_7";
+	char p8[] = "thread_8";
+
+	int disp;
+	disp = lcdInit(2, 16, 4, 18, 23, 24, 25, 8, 7, 0, 0, 0, 0); //4~ rs, E, d4,5,6,7
+
+	lcdClear(disp);
+
+	lcdPosition(disp, 0, 0);
+	lcdPuts(disp, "Choose the mode");
+
+	lcdPosition(disp, 0, 1);
+	lcdPuts(disp, "you want");
+
+	for (i = 0; i < MAX_KEY_BT_NUM; i++)
+	{
+		pinMode(KeypadTable[i], INPUT);
+	}
+
+	while (1)
+	{
+		nKeypadstate = KeypadRead();
+		delay(200);
+
+		
+		if (past_key == 0 && nKeypadstate != 0) 
+		{
+			if ((nKeypadstate & (1 << 0))) // 1번 메뉴 선택 시 동작
+			{
+				lcdClear(disp);
+				lcdPosition(disp, 0, 0);
+				lcdPuts(disp, "Launchpad");
+
+				while (1)
+				{
+					nKeypadstate = KeypadRead();
+					delay(100);
+					
+					if (past_key == 0 && nKeypadstate != 0)
+					{
+						if ((nKeypadstate & (1 << 5)))
+						{
+							pthread_create(&pthread[0], NULL, drum1, (void*)p1);
+						}
+						else if ((nKeypadstate & (1 << 6))) 
+						{
+							pthread_create(&pthread[1], NULL, drum2, (void*)p2);
+						}
+						else if ((nKeypadstate & (1 << 7))) 
+						{
+							pthread_create(&pthread[2], NULL, drum3, (void*)p3);
+						}
+						else if ((nKeypadstate & (1 << 8))) 
+						{
+							pthread_create(&pthread[3], NULL, drum4, (void*)p4);
+						}
+						else if ((nKeypadstate & (1 << 9))) 
+						{
+							pthread_create(&pthread[4], NULL, drum5, (void*)p5);
+						}
+						else if ((nKeypadstate & (1 << 10))) 
+						{
+							pthread_create(&pthread[5], NULL, drum6, (void*)p6);
+						}
+						else if ((nKeypadstate & (1 << 11))) 
+						{
+							pthread_create(&pthread[6], NULL, drum7, (void*)p7);
+						}
+						else if ((nKeypadstate & (1 << 12))) 
+						{
+							pthread_create(&pthread[7], NULL, drum8, (void*)p8);
+						}
+						if ((nKeypadstate & (1 << 1))) //goto menu 2
+						{
+								cur = 2;
+								break;
+						}
+						if ((nKeypadstate & (1 << 2))) //goto menu 3
+						{
+								cur = 3;
+								break;
+						}
+					}
+					past_key = nKeypadstate;
+				}
+				
+			}
+
+
+			else if((nKeypadstate & (1 << 1))) 
+			{
+				
+				lcdClear(disp);
+				lcdPosition(disp, 0, 0);
+				lcdPuts(disp, "Jukebox");
+				
+				while(1)				//jukebox 모드 
+				{
+					nKeypadstate = KeypadRead();
+					delay(100);
+		
+						if((nKeypadstate & (1 << 5)))
+						{
+							while(pre_val == val){
+								val = rand() % 8;
+							}
+							system("pkill omxplayer");
+
+							if (val == 0) {
+								system("omxplayer /home/pi/Desktop/drumsound/바위섬.mp3 &");
+							}
+							else if (val == 1) {
+								system("omxplayer /home/pi/Desktop/drumsound/니가뭔데.mp3 &");
+							}
+							else if (val == 2) {
+								system("omxplayer /home/pi/Desktop/drumsound/디지몬.mp3 &");
+							}
+							else if (val == 3) {
+								system("omxplayer /home/pi/Desktop/drumsound/Fire.mp3 &");
+							}
+							else if (val == 4) {
+								system("omxplayer /home/pi/Desktop/drumsound/야곱의축복.mp3 &");
+							}
+							else if (val == 5) {
+								system("omxplayer /home/pi/Desktop/drumsound/잘자요굿나잇.mp3 &");
+							}
+							else if (val == 6) {
+								system("omxplayer /home/pi/Desktop/drumsound/Y.mp3 &");
+							}
+							else if (val == 7) {
+								system("omxplayer /home/pi/Desktop/drumsound/팝송.mp3 &");
+							}
+							pre_val = val;
+						}
+						else if((nKeypadstate & (1 << 6)))
+						{
+							system("pkill omxplayer");
+						}
+						if ((nKeypadstate & (1 << 0)))
+						{
+								cur = 1;
+								break;
+						}
+						if ((nKeypadstate & (1 << 2)))
+						{
+								cur = 3;
+								break;
+						}
+				}
+			}
+		
+			else if((nKeypadstate & (1 << 2)))
+			{
+				lcdClear(disp);
+				lcdPosition(disp, 0, 0);
+				lcdPuts(disp, "REC Mode");
+
+				while(1)									//녹음 버튼 대기 
+				{
+					nKeypadstate = KeypadRead();
+
+					for (i = 0; i < MAX_KEY_BT_NUM; i++) {
+						KEYPAD_PB[i] = digitalRead(KeypadTable[i]);
+					}
+					
+					int key_value[50] = { 0, };      	//key 값을 받는 배열
+					int del[50] = { 0, };       		//key 입력 사이 딜레이 ms를 받는 배열
+					unsigned int i = 0, j = 0;  		//키 값 순서 i, 딜레이 ms 반복문 변수 
+						
+					// if KEYPAD_PB4 pressed
+					
+					if (!KEYPAD_PB[3] && KEYPAD_PB_old[3]) 
+                    {	//녹음 시작 
+						printf("녹음시작\n");
+						/*
+						lcdClear(disp);
+						lcdPosition(disp, 0, 0);
+						lcdPuts(disp, "REC");*/
+						delay(100); 				//입력 오류 방지 delay
+
+						
+						KEYPAD_PB_old[3] = KEYPAD_PB[3];
+
+						while (1) 
+                        {
+							nKeypadstate = KeypadRead();
+
+							for (int m = 0; m < MAX_KEY_BT_NUM; m++) {              //keypad 입력 값 받기
+								KEYPAD_PB[m] = digitalRead(KeypadTable[m]);
+							}
+
+							if (!KEYPAD_PB[3] && KEYPAD_PB_old[3]) {
+								printf("녹음종료\n");
+								/*lcdClear(disp);
+								lcdPosition(disp, 0, 0);
+								lcdPuts(disp, "STOP REC");*/
+								del[i] = j; j = 0; i = 0;
+								break;
+							}
+
+							if (!KEYPAD_PB[5] && KEYPAD_PB_old[5]) {
+								system("omxplayer -o local Kick.wav &");
+								printf("nkeypad = %d \n", nKeypadstate);
+								printf("Key(nKey) = %d\n", KEY(nKeypadstate));
+								key_value[i] = KEY(nKeypadstate);  
+								del[i] = j; i++; j = 0;
+							}
+
+							if (!KEYPAD_PB[6] && KEYPAD_PB_old[6]) {
+								system("omxplayer -o local C_Hat.wav &");
+								printf("nkeypad = %d \n", nKeypadstate);
+								printf("Key(nKey) = %d\n", KEY(nKeypadstate));
+								key_value[i] = KEY(nKeypadstate); 
+								del[i] = j; i++; j = 0;
+							}
+
+							if (!KEYPAD_PB[7] && KEYPAD_PB_old[7]) {
+								system("omxplayer -o local L_Crash.wav &");
+								printf("nkeypad = %d \n", nKeypadstate);
+								printf("Key(nKey) = %d\n", KEY(nKeypadstate));
+								key_value[i] = KEY(nKeypadstate);
+								del[i] = j; i++; j = 0;
+							}
+
+							if (!KEYPAD_PB[8] && KEYPAD_PB_old[8]) {
+								system("omxplayer -o local M_Tom.mp3 &");
+								printf("nkeypad = %d \n", nKeypadstate);
+								printf("Key(nKey) = %d\n", KEY(nKeypadstate));
+								key_value[i] = KEY(nKeypadstate); 
+								del[i] = j; i++; j = 0;
+							}
+							
+							if (!KEYPAD_PB[9] && KEYPAD_PB_old[9]) {
+								system("omxplayer -o local F_Tom.mp3 &");
+								printf("nkeypad = %d \n", nKeypadstate);
+								printf("Key(nKey) = %d\n", KEY(nKeypadstate));
+								key_value[i] = KEY(nKeypadstate); 
+								del[i] = j; i++; j = 0;
+							}
+							
+							if (!KEYPAD_PB[10] && KEYPAD_PB_old[10]) {
+								system("omxplayer -o local piano01_do.mp3 &");
+								printf("nkeypad = %d \n", nKeypadstate);
+								printf("Key(nKey) = %d\n", KEY(nKeypadstate));
+								key_value[i] = KEY(nKeypadstate); 
+								del[i] = j; i++; j = 0;
+							}
+							
+							if (!KEYPAD_PB[11] && KEYPAD_PB_old[11]) {
+								system("omxplayer -o local piano03_re.mp3 &");
+								printf("nkeypad = %d \n", nKeypadstate);
+								printf("Key(nKey) = %d\n", KEY(nKeypadstate));
+								key_value[i] = KEY(nKeypadstate); 
+								del[i] = j; i++; j = 0;
+							}
+
+							if (!KEYPAD_PB[12] && KEYPAD_PB_old[12]) {
+								system("omxplayer -o local piano03_re.mp3 &");
+								printf("nkeypad = %d \n", nKeypadstate);
+								printf("Key(nKey) = %d\n", KEY(nKeypadstate));
+								key_value[i] = KEY(nKeypadstate); 
+								del[i] = j; i++; j = 0;
+							}
+
+							for (int q = 0; q < MAX_KEY_BT_NUM; q++)
+								KEYPAD_PB_old[q] = KEYPAD_PB[q];
+
+							delay(1); //delayMicroseconds(800);
+
+							j++; //입력이 없는동안 while 문이 돌며 1ms씩 증가되는 딜레이를 j에 저장
+						
+					
+							if (!KEYPAD_PB[4] && KEYPAD_PB_old[4])
+                            {
+
+                                printf("녹음재생\n");
+                                /*lcdClear(disp);
+                                lcdPosition(disp, 0, 0);
+                                lcdPuts(disp, "PLAYING");*/
+
+                                for (int k = 0; k < 50; k++) {              //녹음 재생
+                                //omxplayer key_value[k]; delay(del[k]);
+                                printf("delay: %d \n", del[k]);
+                                delay(del[k]*1.05);
+                                //printf("play: %d \n", key_value[k]);          //추후 소리 재생으로 변경
+                                play_drum(key_value[k]);
+                            
+                                }
+							}
+					    }
+                    }
+					
+                    if ((nKeypadstate & (1 << 0))) //goto menu 1
+					{
+						cur = 1;
+						break;
+					}
+
+					if ((nKeypadstate & (1 << 1))) //goto menu 2
+					{
+						cur = 2;
+						break;
+					}
+
+                    for (i = 0; i < MAX_KEY_BT_NUM; i++){
+                        KEYPAD_PB_old[i] = KEYPAD_PB[i];
+                    }
+
+                }//while			
+            }//else if
+
+			else if((nKeypadstate & (1 << 3))) // nothing happen
+			{
+				lcdClear(disp);
+				lcdPosition(disp, 0, 0);
+				lcdPuts(disp, "Go to menu3");
+			}
+
+			else if((nKeypadstate & (1 << 4)))
+			{
+				lcdClear(disp);
+				lcdPosition(disp, 0, 0);
+				lcdPuts(disp, "Go to menu3");
+			}
+
+
+			if (cur == 1) // cur 
+			{
+				a:
+				cur = 0;
+				lcdClear(disp);
+				lcdPosition(disp, 0, 0);
+				lcdPuts(disp, "Launchpad");
+				printf("%d ", nKeypadstate);
+
+				while (1)
+				{
+					nKeypadstate = KeypadRead();
+					delay(100);
+					
+					if (past_key == 0 && nKeypadstate != 0)
+					{
+						if ((nKeypadstate & (1 << 3)))
+						{
+							pthread_create(&pthread[0], NULL, drum1, (void*)p1);
+						}
+						else if ((nKeypadstate & (1 << 4))) 
+						{
+							pthread_create(&pthread[1], NULL, drum2, (void*)p2);
+						}
+						else if ((nKeypadstate & (1 << 5))) 
+						{
+							pthread_create(&pthread[2], NULL, drum3, (void*)p3);
+						}
+						else if ((nKeypadstate & (1 << 6))) 
+						{
+							pthread_create(&pthread[3], NULL, drum4, (void*)p4);
+						}
+						else if ((nKeypadstate & (1 << 7))) 
+						{
+							pthread_create(&pthread[4], NULL, drum5, (void*)p5);
+						}
+						else if ((nKeypadstate & (1 << 8))) 
+						{
+							pthread_create(&pthread[5], NULL, drum6, (void*)p6);
+						}
+						else if ((nKeypadstate & (1 << 9))) 
+						{
+							pthread_create(&pthread[6], NULL, drum7, (void*)p7);
+						}
+						else if ((nKeypadstate & (1 << 10))) 
+						{
+							pthread_create(&pthread[7], NULL, drum8, (void*)p8);
+						}
+						if ((nKeypadstate & (1 << 1)))
+						{
+								goto b;
+								break;
+						}
+						if ((nKeypadstate & (1 << 2)))
+						{
+								goto c;
+								break;
+						}
+					}
+					past_key = nKeypadstate;
+				}
+				
+			}
+
+
+			if(cur==2) 
+			{
+				b:
+				cur = 0;
+				lcdClear(disp);
+				lcdPosition(disp, 0, 0);
+				lcdPuts(disp, "Jukebox");
+
+				while(1)
+				{
+					nKeypadstate = KeypadRead();
+					delay(100);
+						if((nKeypadstate & (1 << 3)))
+						{
+							while(pre_val == val){
+								val = rand() % 8;
+							}
+							system("pkill omxplayer");
+
+							if (val == 0) {
+								system("omxplayer /home/pi/Desktop/drumsound/바위섬.mp3 &");
+							}
+							else if (val == 1) {
+								system("omxplayer /home/pi/Desktop/drumsound/니가뭔데.mp3 &");
+							}
+							else if (val == 2) {
+								system("omxplayer /home/pi/Desktop/drumsound/디지몬.mp3 &");
+							}
+							else if (val == 3) {
+								system("omxplayer /home/pi/Desktop/drumsound/Fire.mp3 &");
+							}
+							else if (val == 4) {
+								system("omxplayer /home/pi/Desktop/drumsound/야곱의축복.mp3 &");
+							}
+							else if (val == 5) {
+								system("omxplayer /home/pi/Desktop/drumsound/잘자요굿나잇.mp3 &");
+							}
+							else if (val == 6) {
+								system("omxplayer /home/pi/Desktop/drumsound/Y.mp3 &");
+							}
+							else if (val == 7) {
+								system("omxplayer /home/pi/Desktop/drumsound/팝송.mp3 &");
+							}
+							pre_val = val;
+						}
+						else if((nKeypadstate & (1 << 4)))
+						{
+							system("pkill omxplayer");
+						}
+						if ((nKeypadstate & (1 << 0)))
+						{
+								goto a;
+								break;
+						}
+						if ((nKeypadstate & (1 << 2)))
+						{
+								goto c;
+								break;
+						}
+						
+					
+					past_key = nKeypadstate;
+				}
+			}
+
+			if (cur == 3)
+			{
+				c:
+				cur = 0;
+
+				lcdClear(disp);
+				lcdPosition(disp, 0, 0);
+				lcdPuts(disp, "REC Mode");
+
+				while(1)									//녹음 버튼 대기 
+				{
+					nKeypadstate = KeypadRead();
+
+					for (i = 0; i < MAX_KEY_BT_NUM; i++) {
+						KEYPAD_PB[i] = digitalRead(KeypadTable[i]);
+					}
+					
+					int key_value[50] = { 0, };      	//key 값을 받는 배열
+					int del[50] = { 0, };       		//key 입력 사이 딜레이 ms를 받는 배열
+					unsigned int i = 0, j = 0;  		//키 값 순서 i, 딜레이 ms 반복문 변수 
+						
+					// if KEYPAD_PB4 pressed
+					
+					if (!KEYPAD_PB[3] && KEYPAD_PB_old[3]) 
+                    {	//녹음 시작 
+						printf("녹음시작\n");
+						/*
+						lcdClear(disp);
+						lcdPosition(disp, 0, 0);
+						lcdPuts(disp, "REC");*/
+						delay(100); 				//입력 오류 방지 delay
+
+						
+						KEYPAD_PB_old[3] = KEYPAD_PB[3];
+
+						while (1) 
+                        {
+							nKeypadstate = KeypadRead();
+
+							for (int m = 0; m < MAX_KEY_BT_NUM; m++) {              //keypad 입력 값 받기
+								KEYPAD_PB[m] = digitalRead(KeypadTable[m]);
+							}
+
+							if (!KEYPAD_PB[3] && KEYPAD_PB_old[3]) {
+								printf("녹음종료\n");
+								/*lcdClear(disp);
+								lcdPosition(disp, 0, 0);
+								lcdPuts(disp, "STOP REC");*/
+								del[i] = j; j = 0; i = 0;
+								break;
+							}
+
+							if (!KEYPAD_PB[5] && KEYPAD_PB_old[5]) {
+								system("omxplayer -o local Kick.wav &");
+								printf("nkeypad = %d \n", nKeypadstate);
+								printf("Key(nKey) = %d\n", KEY(nKeypadstate));
+								key_value[i] = KEY(nKeypadstate);  
+								del[i] = j; i++; j = 0;
+							}
+
+							if (!KEYPAD_PB[6] && KEYPAD_PB_old[6]) {
+								system("omxplayer -o local C_Hat.wav &");
+								printf("nkeypad = %d \n", nKeypadstate);
+								printf("Key(nKey) = %d\n", KEY(nKeypadstate));
+								key_value[i] = KEY(nKeypadstate); 
+								del[i] = j; i++; j = 0;
+							}
+
+							if (!KEYPAD_PB[7] && KEYPAD_PB_old[7]) {
+								system("omxplayer -o local L_Crash.wav &");
+								printf("nkeypad = %d \n", nKeypadstate);
+								printf("Key(nKey) = %d\n", KEY(nKeypadstate));
+								key_value[i] = KEY(nKeypadstate);
+								del[i] = j; i++; j = 0;
+							}
+
+							if (!KEYPAD_PB[8] && KEYPAD_PB_old[8]) {
+								system("omxplayer -o local M_Tom.mp3 &");
+								printf("nkeypad = %d \n", nKeypadstate);
+								printf("Key(nKey) = %d\n", KEY(nKeypadstate));
+								key_value[i] = KEY(nKeypadstate); 
+								del[i] = j; i++; j = 0;
+							}
+							
+							if (!KEYPAD_PB[9] && KEYPAD_PB_old[9]) {
+								system("omxplayer -o local F_Tom.mp3 &");
+								printf("nkeypad = %d \n", nKeypadstate);
+								printf("Key(nKey) = %d\n", KEY(nKeypadstate));
+								key_value[i] = KEY(nKeypadstate); 
+								del[i] = j; i++; j = 0;
+							}
+							
+							if (!KEYPAD_PB[10] && KEYPAD_PB_old[10]) {
+								system("omxplayer -o local piano01_do.mp3 &");
+								printf("nkeypad = %d \n", nKeypadstate);
+								printf("Key(nKey) = %d\n", KEY(nKeypadstate));
+								key_value[i] = KEY(nKeypadstate); 
+								del[i] = j; i++; j = 0;
+							}
+							
+							if (!KEYPAD_PB[11] && KEYPAD_PB_old[11]) {
+								system("omxplayer -o local piano03_re.mp3 &");
+								printf("nkeypad = %d \n", nKeypadstate);
+								printf("Key(nKey) = %d\n", KEY(nKeypadstate));
+								key_value[i] = KEY(nKeypadstate); 
+								del[i] = j; i++; j = 0;
+							}
+
+							if (!KEYPAD_PB[12] && KEYPAD_PB_old[12]) {
+								system("omxplayer -o local piano03_re.mp3 &");
+								printf("nkeypad = %d \n", nKeypadstate);
+								printf("Key(nKey) = %d\n", KEY(nKeypadstate));
+								key_value[i] = KEY(nKeypadstate); 
+								del[i] = j; i++; j = 0;
+							}
+
+							for (int q = 0; q < MAX_KEY_BT_NUM; q++)
+								KEYPAD_PB_old[q] = KEYPAD_PB[q];
+
+							delay(1); //delayMicroseconds(800);
+
+							j++; //입력이 없는동안 while 문이 돌며 1ms씩 증가되는 딜레이를 j에 저장
+						
+					
+							if (!KEYPAD_PB[4] && KEYPAD_PB_old[4])
+                            {
+
+                                printf("녹음재생\n");
+                                /*lcdClear(disp);
+                                lcdPosition(disp, 0, 0);
+                                lcdPuts(disp, "PLAYING");*/
+
+                                for (int k = 0; k < 50; k++) {              //녹음 재생
+                                //omxplayer key_value[k]; delay(del[k]);
+                                printf("delay: %d \n", del[k]);
+                                delay(del[k]*1.05);
+                                //printf("play: %d \n", key_value[k]);          //추후 소리 재생으로 변경
+                                play_drum(key_value[k]);
+                            
+                                }
+							}
+					    }
+                    }
+					
+                    if ((nKeypadstate & (1 << 0))) //goto menu 1
+					{
+						goto a;
+						break;
+					}
+
+					if ((nKeypadstate & (1 << 1))) //goto menu 2
+					{
+						goto b;
+						break;
+					}
+
+                    for (i = 0; i < MAX_KEY_BT_NUM; i++){
+                        KEYPAD_PB_old[i] = KEYPAD_PB[i];
+                    }
+
+                }//while
+				
+			}
+
+		}past_key = nKeypadstate;
+}

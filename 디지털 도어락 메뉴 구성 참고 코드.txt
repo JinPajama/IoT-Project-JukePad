@@ -1,0 +1,1097 @@
+#include <wiringPi.h>
+#include <stdio.h>
+#include <softPwm.h>
+#include <softTone.h>
+#include <lcd.h>
+#include <stdlib.h>
+
+//핀 번호정의하는 부분
+#define RS 18
+#define E 23
+#define D6 24
+#define D7 25
+#define D4 8
+#define D5 7
+
+#define KEYPAD_PB1 2
+#define KEYPAD_PB2 3
+#define KEYPAD_PB3 4
+#define KEYPAD_PB5 27
+#define KEYPAD_PB6 22
+#define KEYPAD_PB7 10
+#define KEYPAD_PB9 11
+#define KEYPAD_PB10 5
+#define KEYPAD_PB11 6
+#define KEYPAD_PB13 19
+#define KEYPAD_PB14 26
+#define KEYPAD_PB15 20
+
+#define SERVO 16
+
+//음계
+#define DO 261
+#define DO_L 523
+#define DO_S 554
+#define RE 587
+#define RE_S 622
+#define MI 659
+#define FA 698
+#define FA_S 740
+#define SOL 784
+#define SOL_S 830
+#define RA 880
+#define RA_S 932
+#define SI 987
+#define DO_H 1046
+
+
+
+#define MAX_KEY_BT_NUM 12
+
+int BUZZER_PIN=12; // 부저를  define문이 아닌 전역변수로 한 이유는 4번 키패드를 눌렀을때 사운드 온오프 기능을 제어하기 위함
+
+const int KeypadTable[12]={ // 키패드
+	KEYPAD_PB1,KEYPAD_PB2,KEYPAD_PB3,
+	KEYPAD_PB5,KEYPAD_PB6,KEYPAD_PB7,
+	KEYPAD_PB9,KEYPAD_PB10,KEYPAD_PB11,
+	KEYPAD_PB13,KEYPAD_PB14,KEYPAD_PB15};
+
+unsigned int SevenScale(unsigned char scale) // 부저 소리
+{
+	unsigned int _ret=0;
+	switch(scale)
+	{
+		case 0:
+			_ret=DO_L; // 도
+			break;
+		case 1:
+			_ret=RE; // 레
+			break;
+		case 2:
+			_ret=MI; // 미
+			break;
+		case 3:
+			_ret=FA; // 파
+			break;
+		case 4:
+			_ret=SOL; // 솔
+			break;
+		case 5:
+			_ret=RA; // 라
+			break;
+		case 6:
+			_ret=SI; // 시
+			break;
+		case 7:
+			_ret=DO_H; // 도
+			break;
+	}
+	return _ret;
+}
+
+void Change_FREQ(unsigned int freq) // 주파수 변경
+{
+	softToneWrite(BUZZER_PIN,freq);
+}
+
+void STOP_FREQ(void) // 소리 끔
+{
+	softToneWrite(BUZZER_PIN,0);
+}
+void Buzzer_Init(void)
+{
+	softToneCreate(BUZZER_PIN);
+	STOP_FREQ();
+}
+
+
+
+int KeypadRead(void) // 키패드 입력
+{
+
+	int i,nKeypadstate;
+	nKeypadstate = 0;
+	for(i =0; i<MAX_KEY_BT_NUM; i++)
+	{
+		if(!digitalRead(KeypadTable[i]))
+		{
+			nKeypadstate |= (1<<i);
+		}
+	}
+	return nKeypadstate;
+}
+
+
+int main()
+{
+
+	int asto=0;
+
+	if(wiringPiSetupGpio() == -1)
+		return 1;
+
+
+	Buzzer_Init(); // 부저
+	softPwmCreate(SERVO,0,200); //서브모터 범위 설정
+
+	int musicplay=0;
+	int initialcount=0;
+	int pwdcount = 0,inputcount=0,check =0;
+	int passwd[20]; // 비밀번호 저장 배열
+	int input_passwd[20]; // 비밀번호 입력 배열
+	int pass_count=0; // 비밀번호 입력 횟수
+	int i;
+	int nKeypadstate;
+	int past_key=0; // 인터럽트
+
+	//passwd=(int*)malloc(sizeof(int)*100);
+
+	for(i =0; i<MAX_KEY_BT_NUM; i++)
+	{
+		pinMode(KeypadTable[i],INPUT);
+	}
+
+
+	int textcount=1;
+	int disp1;
+	disp1=lcdInit(2,16,4,RS,E,D4,D5,D6,D7,0,0,0,0);
+
+	// 일단처음에  lcd에 기본적으로 출력되는 내용들
+	lcdClear(disp1);
+	lcdPosition(disp1,15,1);
+	lcdPuts(disp1,"v");
+
+	lcdPosition(disp1,0,0);
+	lcdPuts(disp1,"1.Input PW");
+
+	lcdPosition(disp1,0,1);
+	lcdPuts(disp1,"2.Set PW");
+
+	
+	printf("초기 비밀번호를 세팅하세요..\n");
+	while(1)
+	{
+		nKeypadstate = KeypadRead();
+		delay(150); // 입력 시간 고려
+		if(past_key == 0 && nKeypadstate != 0) // 인터럽트
+		{
+			if((nKeypadstate &(1<<9))) // 10 아래방향키
+			{
+				Change_FREQ(FA); //버튼이 눌릴때마다 소리를 주기 위해 눌린순간이 되면 if문이 동작하여 소리나는 방식으로 
+                delay(200);
+                STOP_FREQ();
+				lcdClear(disp1);
+				textcount++;
+				
+				if(textcount==1){ //처음 textcount는 1로 초기화되어있음 아래방향키가 눌릴때마다 textcount 변수값이 증가하게 하여 다음 내용을 화면에 출력하는식으로 했다. 
+					lcdPosition(disp1,0,0);
+					lcdPuts(disp1,"1.Input PW");
+					
+					lcdPosition(disp1,0,1);
+					lcdPuts(disp1,"2.Set PW");
+				}
+				else if(textcount==2){
+					lcdPosition(disp1,0,0);
+					lcdPuts(disp1,"2.Set PW");
+					
+					lcdPosition(disp1,0,1);
+					lcdPuts(disp1,"3.Change PW");
+				
+				}
+				else if(textcount==3){
+					lcdPosition(disp1,0,0);
+					lcdPuts(disp1,"3.Change PW");
+					
+					lcdPosition(disp1,0,1);
+					lcdPuts(disp1,"4.Sound on/off");
+					
+				}
+				else if(textcount==4){
+					lcdPosition(disp1,0,0);
+					lcdPuts(disp1,"4.Sound on/off");
+					
+					lcdPosition(disp1,0,1);
+					lcdPuts(disp1,"1.Input PW");
+					textcount=0;
+					
+				}
+				lcdPosition(disp1,15,1);
+				lcdPuts(disp1,"v");
+			}
+			
+			
+			if((nKeypadstate &(1<<0))) // 1번이 눌리면 작동하는 부분입니다
+			{
+				Change_FREQ(DO_L);
+				delay(200);
+				STOP_FREQ();
+				inputcount=0;
+				printf("input num\n");
+				
+				while(1)
+			   	{
+					if(initialcount==0) {   //처음에 2번버튼을 통해 비밀번호 세팅안했으면 break를 통해 처음메뉴로 돌아가고 lcd화면도 처음메뉴 출력
+						lcdClear(disp1);
+						lcdPosition(disp1,0,0);
+						lcdPuts(disp1,"first set plz");
+							
+						delay(2000);
+							
+						lcdClear(disp1);
+						lcdPosition(disp1,15,1);
+						lcdPuts(disp1,"v");
+									
+						lcdPosition(disp1,0,0);
+						lcdPuts(disp1,"1.Input PW");
+
+						lcdPosition(disp1,0,1);
+						lcdPuts(disp1,"2.Set PW");	
+							
+						break;
+					}
+					
+					lcdClear(disp1); //비밀번호가 세팅되어 있다면 1.INPUT PW를 화면에 출력하고 눌린비밀번호만큼 *을 화면에 출력되게했습니다.
+					lcdPosition(disp1,0,0);
+					lcdPuts(disp1,"1.Input PW");
+						
+					for(i=0; i<inputcount; i++){
+						lcdPosition(disp1,i,1);
+						lcdPuts(disp1,"*");
+					}
+						
+        		    nKeypadstate = KeypadRead();
+        		    delay(200); //입력 시간 고려
+               			
+					if(past_key == 0 && nKeypadstate != 0)
+               		{
+						if((nKeypadstate &(1<<11))) // 비밀번호를 입력하고 엔터를 눌렀을경우 상황입니다.
+						{
+							Change_FREQ(1174);
+							delay(200);
+							STOP_FREQ();
+								
+							if(pass_count==2){ // 3번 비밀번호가 틀렸다면 LCD에 RETRY AFTER10SEC라는메시지 출력하고 10초뒤에 처음메뉴로 돌아가게 하는 조건문 
+								lcdClear(disp1);
+								lcdPosition(disp1,0,0);
+								lcdPuts(disp1,"no more!");
+								lcdPosition(disp1,0,1);
+								lcdPuts(disp1,"Retry after10sec");
+									 
+									 
+								printf("10초 뒤에 다시 입력하세요..\n");
+								Change_FREQ(SevenScale(6)); // 시
+								delay(500);
+								STOP_FREQ();
+								Change_FREQ(SevenScale(7)); // 도
+								delay(500);
+								STOP_FREQ();
+								delay(9000);
+								pass_count=0;
+								printf("10초가 지났습니다. 다시 입력하세요.\n"); // 10초뒤에 입력
+									 
+								lcdClear(disp1);
+								lcdPosition(disp1,15,1);
+								lcdPuts(disp1,"v");
+									
+								lcdPosition(disp1,0,0);
+								lcdPuts(disp1,"1.Input PW");
+
+								lcdPosition(disp1,0,1);
+								lcdPuts(disp1,"2.Set PW");
+								delay(500);
+								break;
+							}
+								
+								
+							if(inputcount == 4) // 비밀번호가 4자리일경우
+							{
+								for(i=0;i<4;i++)
+								{
+									if(passwd[i] == input_passwd[i]) //입력한 비밀번호와 설정한 비밀번호가 맞았을 때
+										check++; // 체크 횟수 증가
+								}
+								
+								if(check == 4) // 입력한 비밀번호와 설정한 비밀번호가 다 맞았을 때
+								{	   //문이 열리고 서보모터 90도 회전하는 부분 (경쾌한 소리))
+									lcdClear(disp1);
+									lcdPosition(disp1,0,0);
+									lcdPuts(disp1,"Door opend"); //DOOR 오픈 출력하고 2초뒤 처음메뉴이동
+									pass_count=0;
+									printf("문이 열립니다.\n");
+
+									softPwmWrite(SERVO,25); // 서브모터 90도 회전
+
+									Change_FREQ(SevenScale(3)); // 파
+									delay(500); // 0.5초
+									STOP_FREQ(); // 소리 끔
+
+									Change_FREQ(SevenScale(5)); // 라
+									delay(500);
+									STOP_FREQ();
+
+									Change_FREQ(SevenScale(6)); // 시
+									delay(500);
+									STOP_FREQ();
+									delay(500);
+									softPwmWrite(SERVO,15); // 2초뒤 서브모터 원상태 복귀하고 처음메뉴로 이동
+										
+									lcdClear(disp1);
+									lcdPosition(disp1,0,0);
+									lcdPuts(disp1,"1.Input PW");
+									lcdPosition(disp1,0,1);
+									lcdPuts(disp1,"2.Set PW");
+									lcdPosition(disp1,15,1);
+									lcdPuts(disp1,"v");
+									textcount=1;
+									check = 0;
+									inputcount = 0;
+									
+									break;
+								}
+								
+								else // 4번 입력한 비밀번호가 틀렸을 경우2초간  INVAILD PASSWORD LCD에 출력하고 다시 입력받게
+								{
+									lcdClear(disp1);
+									lcdPosition(disp1,0,0);
+									lcdPuts(disp1,"Invaild password");
+									Change_FREQ(SevenScale(1)); // 레
+									delay(500);
+									STOP_FREQ();
+									delay(1500);
+																														
+									pass_count++;
+									lcdClear(disp1);
+									lcdPosition(disp1,0,0);
+									lcdPuts(disp1,"1.Input PW");
+										
+									printf("비밀번호가 틀렸습니다. 다시 입력하세요..\n");
+									check = 0;
+									inputcount = 0;
+								}
+							}
+							else // 비밀번호 4자리가 아닌경우 처리도 위와 마찬가지로  
+							{
+								pass_count++;
+								lcdClear(disp1);
+								lcdPosition(disp1,0,0);
+								lcdPuts(disp1,"Invaild password");
+								Change_FREQ(SevenScale(1)); // 레
+								delay(500);
+								STOP_FREQ();
+								delay(1500);
+									
+								lcdClear(disp1);
+								lcdPosition(disp1,0,0);
+								lcdPuts(disp1,"1.Input PW");
+									
+								printf("비밀번호가 틀렸습니다. 다시 입력하세요..\n");
+								check = 0;
+								inputcount = 0;
+							}
+								
+						}
+						
+						else if((nKeypadstate &(1<<9))) //아래 방향키가 눌렸을때는 소리만 나게 하고 입력은무시될수 있게
+						{
+							Change_FREQ(DO_H);
+							delay(200);
+							STOP_FREQ();
+						}
+
+						else
+						{  // 눌린 숫자키를 저장하는 부분
+							if(nKeypadstate &(1<<0)){
+								input_passwd[inputcount++] = 1;
+								Change_FREQ(DO_L);
+								delay(200);
+								STOP_FREQ();
+								printf("1\n");
+							}
+							else if(nKeypadstate &(1<<1)){
+								Change_FREQ(DO_S);
+								delay(200);
+								STOP_FREQ();
+								input_passwd[inputcount++] = 2;
+								printf("2\n");
+							}
+							else if(nKeypadstate &(1<<2)){
+								Change_FREQ(RE);
+								delay(200);
+								STOP_FREQ();
+								input_passwd[inputcount++] = 3;
+								printf("3\n");
+							}
+							else if(nKeypadstate &(1<<3)){
+								Change_FREQ(MI);
+								delay(200);
+								STOP_FREQ();
+								input_passwd[inputcount++] = 4;
+								printf("4\n");
+							}
+							else if(nKeypadstate &(1<<4)){
+								Change_FREQ(FA);
+								delay(200);
+								STOP_FREQ();
+								input_passwd[inputcount++] = 5;
+								printf("5\n");
+							}
+							else if(nKeypadstate &(1<<5)){
+								Change_FREQ(FA_S);
+								delay(200);
+								STOP_FREQ();
+								input_passwd[inputcount++] = 6;
+								printf("6\n");
+							}
+							else if(nKeypadstate &(1<<6)){
+								Change_FREQ(SOL);
+								delay(200);
+								STOP_FREQ();
+								input_passwd[inputcount++] = 7;
+								printf("7\n");
+							}
+							else if(nKeypadstate &(1<<7)){
+								Change_FREQ(SOL_S);
+								delay(200);
+								STOP_FREQ();
+								input_passwd[inputcount++] = 8;
+								printf("8\n");
+							}
+							else if(nKeypadstate &(1<<8)){
+								Change_FREQ(RA);
+								delay(200);
+								STOP_FREQ();
+								input_passwd[inputcount++] = 9;
+								printf("9\n");
+							}
+							else if(nKeypadstate &(1<<10)){
+								Change_FREQ(SI);
+								delay(200);
+								STOP_FREQ();
+								input_passwd[inputcount++] = 0;
+								printf("0\n");
+							}
+								
+									
+						}
+
+					}
+					past_key=nKeypadstate;
+				}
+			}
+			
+			
+			else if((nKeypadstate &(1<<1))) // 2 번 비밀번호 설정메뉴
+			{
+				Change_FREQ(DO_S);
+				delay(200);
+				STOP_FREQ();
+				pwdcount = 0;
+				printf("비밀번호를 4자리를 등록하세요..\n");
+				delay(150); // 입력 시간 고려
+				nKeypadstate = 0;
+				
+				while(1)
+			   	{
+					if(initialcount==1) {   //만약 처음에 비밀번호 세팅하고 다시 돌아오면 2번 메뉴로는 더이상 비밀번호 세팅못하게 예외처리!!
+						lcdClear(disp1);
+						lcdPosition(disp1,0,0);
+						lcdPuts(disp1,"set finished");
+							
+						delay(2000);
+							
+						lcdClear(disp1);
+						lcdPosition(disp1,15,1);
+						lcdPuts(disp1,"v");
+									
+						lcdPosition(disp1,0,0);
+						lcdPuts(disp1,"1.Input PW");
+
+						lcdPosition(disp1,0,1);
+						lcdPuts(disp1,"2.Set PW");
+						break;
+					}
+						
+					lcdClear(disp1); //처음 비밀번호 세팅하는게 맞다면 2.SETPW를 LCD에 출력하고 눌린수만큼 별표출력
+					lcdPosition(disp1,0,0);
+					lcdPuts(disp1,"2.Set PW");
+					
+					for(i=0; i<pwdcount; i++){
+						lcdPosition(disp1,i,1);
+						lcdPuts(disp1,"*");
+					}
+						
+        		    nKeypadstate = KeypadRead();
+        		    delay(200); //입력 시간 고려
+               		
+					if(past_key == 0 && nKeypadstate != 0)
+               		{
+
+						if((nKeypadstate &(1<<11))) // 엔터가이 눌렸을 때
+						{
+							Change_FREQ(1174);
+							delay(200);
+							STOP_FREQ();
+
+							if(pwdcount == 4) // 등록한 비밀번호가 4자리 일 경우
+							{      //비밀번호 세팅완료됐다고 DONE과 경쾌한 소리로 알려주고 처음 메뉴로 이동
+								lcdClear(disp1);
+								lcdPosition(disp1,0,0);
+								lcdPuts(disp1,"Done");
+								Change_FREQ(DO);
+								delay(500);
+								STOP_FREQ();
+								Change_FREQ(RE);
+								delay(500);
+								STOP_FREQ();
+								Change_FREQ(MI);
+								delay(500);
+								STOP_FREQ();
+								delay(500);
+								printf("비밀번호 설정이 완료 되었습니다. 등록하신 비밀번호는  %d %d %d %d 입니다..\n",passwd[0],passwd[1],passwd[2],passwd[3]);
+								initialcount++;
+								pwdcount = 0;
+								lcdClear(disp1);
+								lcdPosition(disp1,0,0);
+								lcdPuts(disp1,"1.Input PW");
+								lcdPosition(disp1,0,1);
+								lcdPuts(disp1,"2.Set PW");
+								lcdPosition(disp1,15,1);
+								lcdPuts(disp1,"v");
+									
+								break;
+							}
+							else
+							{       //비밀 번호 4자리가 아니게 설정한경우는 INVAILD PASSWORD LCD에 2초출력하고 다시 비밀번호 입력하도록 한다.
+								lcdClear(disp1);
+								lcdPosition(disp1,0,0);
+								lcdPuts(disp1,"Invaild password");
+								Change_FREQ(SevenScale(1)); // 레
+								delay(500);
+								STOP_FREQ();
+								delay(1500);
+									
+								lcdClear(disp1);
+								lcdPosition(disp1,0,0);
+								lcdPuts(disp1,"2.Set PW");
+								printf("비밀번호 설정을 잘못 하셨습니다. 다시 입력 해 주세요..\n");
+								pwdcount=0;
+							}
+								
+						}
+						else if((nKeypadstate &(1<<9))) //아래 방향키 눌렸을경우 소리만 출력되게 하고 입력은무시할수 있게
+						{
+							Change_FREQ(DO_H);
+							delay(200);
+							STOP_FREQ();
+						}
+
+						else{ //숫자 입력받는부분
+							if(nKeypadstate &(1<<0)){
+								Change_FREQ(DO_L);
+								delay(200);
+								STOP_FREQ();
+								passwd[pwdcount++] = 1;
+								printf("1\n");
+							}
+							else if(nKeypadstate &(1<<1)){
+								Change_FREQ(DO_S);
+								delay(200);
+								STOP_FREQ();
+								passwd[pwdcount++] = 2;
+								printf("2\n");
+							}
+							else if(nKeypadstate &(1<<2)){
+								Change_FREQ(RE);
+								delay(200);
+								STOP_FREQ();
+								passwd[pwdcount++] = 3;
+								printf("3\n");
+							}
+							else if(nKeypadstate &(1<<3)){
+								Change_FREQ(RE_S);
+								delay(200);
+								STOP_FREQ();
+                                passwd[pwdcount++] = 4;
+                                printf("4\n");
+							}
+							else if(nKeypadstate &(1<<4)){
+								Change_FREQ(MI);
+								delay(200);
+								STOP_FREQ();
+								passwd[pwdcount++] = 5;
+								printf("5\n");
+							}
+							else if(nKeypadstate &(1<<5)){
+								Change_FREQ(FA);
+								delay(200);
+								STOP_FREQ();
+								passwd[pwdcount++] = 6;
+								printf("6\n");
+							}
+							else if(nKeypadstate &(1<<6)){
+								Change_FREQ(SOL);
+								delay(200);
+								STOP_FREQ();
+								passwd[pwdcount++] = 7;
+								printf("7\n");
+							}
+							else if(nKeypadstate &(1<<7)){
+								Change_FREQ(SOL_S);
+								delay(200);
+								STOP_FREQ();
+								passwd[pwdcount++] = 8;
+								printf("8\n");
+							}
+							else if(nKeypadstate &(1<<8)){
+								Change_FREQ(RA);
+								delay(200);
+								STOP_FREQ();
+								passwd[pwdcount++] = 9;
+								printf("9\n");
+							}
+							else if(nKeypadstate &(1<<10)){
+								Change_FREQ(RA_S);
+								delay(200);
+								STOP_FREQ();
+								passwd[pwdcount++] = 0;
+								printf("0\n");
+							}
+
+						}
+
+					}
+					past_key=nKeypadstate;
+				}
+			}
+			
+			else if((nKeypadstate &(1<<2))) // 3번 비밀번호 변경메뉴 
+			{
+				Change_FREQ(RE);
+				delay(200);
+				STOP_FREQ();
+				inputcount=0;
+				printf("match input num\n");
+				
+				while(1) 
+			   	{
+					if(asto==1) { //비밀번호가 변경이 완료됐으면 아래 조건에서 ASTO가 1로 증가시키는데 그 때 와일문을 탈출하기 위해 사용한부분입니다.
+						asto=0;
+						break;
+					}
+					if(initialcount==0) {  // 2번 메뉴를 통해 비밀번호 세팅먼저 안했으면 처음메뉴로 돌아가게 하는 예외처리
+						lcdClear(disp1);
+						lcdPosition(disp1,0,0);
+						lcdPuts(disp1,"first set plz");
+							
+						delay(2000);
+							
+						lcdClear(disp1);
+						lcdPosition(disp1,15,1);
+						lcdPuts(disp1,"v");
+									
+						lcdPosition(disp1,0,0);
+						lcdPuts(disp1,"1.Input PW");
+
+					    lcdPosition(disp1,0,1);
+					    lcdPuts(disp1,"2.Set PW");
+						break;
+					}
+						
+					lcdClear(disp1);  //2번메뉴를 통해비밀번호로 세팅먼저 했으면  동작하는부분
+					lcdPosition(disp1,0,0);
+					lcdPuts(disp1,"3.Change PW");
+					lcdPosition(disp1,0,1);
+					lcdPuts(disp1,"As is:");
+			
+					for(i=0; i<inputcount; i++){
+						lcdPosition(disp1,i+6,1);
+						lcdPuts(disp1,"*");
+					}
+						
+						
+						
+						
+        		    nKeypadstate = KeypadRead();
+        		    delay(200); //입력 시간 고려
+               		
+					if(past_key == 0 && nKeypadstate != 0)
+               		{
+
+						if((nKeypadstate &(1<<11))) // 엔터 눌렸을 때
+						{
+							if(inputcount == 4) // 비밀번호가 4자리 일 경우
+							{
+								for(i=0;i<4;i++)
+								{
+									if(passwd[i] == input_passwd[i]) //입력한 비밀번호와 설정한 비밀번호가 맞았을 때
+										check++; // 체크 횟수 증가
+								}
+									
+									
+								if(check == 4) // 입력한 비밀번호와 설정한 비밀번호가 다 맞았을 때
+								{             //경쾌한 소리 출력
+									lcdClear(disp1);
+									lcdPosition(disp1,0,0);
+									lcdPuts(disp1,"Done");
+									Change_FREQ(DO);
+									delay(500);
+									STOP_FREQ();
+									Change_FREQ(RE);
+									delay(500);
+									STOP_FREQ();
+									Change_FREQ(MI);
+									delay(500);
+									STOP_FREQ();
+									delay(500);
+									
+									
+									lcdClear(disp1);
+									lcdPosition(disp1,0,0);
+									lcdPuts(disp1,"3.Change PW"); // 그 후 화면에  TOBE를출력하고 다음 비밀번호 세팅할수 있게
+									lcdPosition(disp1,0,1);
+									lcdPuts(disp1,"To be:");
+										
+									printf("input new passwd\n");
+									pwdcount = 0;
+									printf("new passwd를 4자리를 등록하세요..\n");
+									delay(200); // 입력 시간 고려
+									nKeypadstate = 0;
+									check = 0;
+									inputcount = 0;
+										
+
+									while(1) //새로운 비밀번호 설정하는 부분 
+									{ 
+										lcdClear(disp1);
+										lcdPosition(disp1,0,0);
+										lcdPuts(disp1,"3.Change PW");
+										lcdPosition(disp1,0,1);
+										lcdPuts(disp1,"To be:");  //눌린 새로운비밀번호 개수만큼화면에 *출력
+									
+										for(i=0; i<pwdcount; i++){
+											lcdPosition(disp1,i+6,1);
+											lcdPuts(disp1,"*");
+										}
+											
+										nKeypadstate = KeypadRead();
+										delay(200); //입력 시간 고려
+									
+										if(past_key == 0 && nKeypadstate != 0)
+										{
+											if((nKeypadstate &(1<<11))) // 엔터가이 눌렸을 때
+											{
+												Change_FREQ(1174);
+												delay(200);
+												STOP_FREQ();
+										
+												if(pwdcount == 4) // 등록한 비밀번호가 4자리 일 경우 경쾌한 소리나고 DONE 출력후 처음메뉴로
+												{
+													lcdClear(disp1);
+													lcdPosition(disp1,0,0);
+													lcdPuts(disp1,"Done");
+													Change_FREQ(DO);
+													delay(500);
+													STOP_FREQ();
+													Change_FREQ(RE);
+													delay(500);
+													STOP_FREQ();
+													Change_FREQ(MI);
+													delay(500);
+													STOP_FREQ();
+													delay(500);
+																					
+													printf("비밀번호 설정이 완료 되었습니다. 등록하신 비밀번호는  %d %d %d %d 입니다..\n",passwd[0],passwd[1],passwd[2],passwd[3]);
+															
+													lcdClear(disp1);
+													lcdPosition(disp1,0,0);
+													lcdPuts(disp1,"1.Input PW");
+													lcdPosition(disp1,0,1);
+													lcdPuts(disp1,"2.Set PW");
+													lcdPosition(disp1,15,1);
+													lcdPuts(disp1,"v");
+													printf("비밀번호 설정이 완료 되었습니다. 등록하신 비밀번호는  %d %d %d %d 입니다..\n",passwd[0],passwd[1],passwd[2],passwd[3]);
+													pwdcount = 0;
+													asto=1;
+													break;
+												}
+												else   //비밀번호 4자리 입력안하면 INVALID PASSWORD 출력하고 다시 비밀번호 설정하도록
+												{
+													lcdClear(disp1);
+													lcdPosition(disp1,0,0);
+													lcdPuts(disp1,"Invalid password");
+													Change_FREQ(SevenScale(1)); // 레
+													delay(500);
+													STOP_FREQ();
+													delay(1500);
+												
+													lcdClear(disp1);
+													lcdPosition(disp1,0,0);
+													lcdPuts(disp1,"3.Change PW");
+													lcdPosition(disp1,0,1);
+													lcdPuts(disp1,"To be:");
+															
+													printf("비밀번호 설정을 잘못 하셨습니다. 다시 입력 해 주세요..\n");
+													pwdcount=0;
+									
+												}
+														
+											}
+											
+											else if((nKeypadstate &(1<<9))) //아래방향키 눌렀을때 소리만나고 입력안되는처리
+											{
+												Change_FREQ(DO_H);
+												delay(200);
+												STOP_FREQ();
+											}
+
+											else{ //숫자 입력받는 부분 (to be-새 패스워드)
+												if(nKeypadstate &(1<<0)){
+													Change_FREQ(DO_L);
+													delay(200);
+													STOP_FREQ();
+													passwd[pwdcount++] = 1;
+													printf("1\n");
+													}
+												else if(nKeypadstate &(1<<1)){
+													Change_FREQ(DO_S);
+													delay(200);
+													STOP_FREQ();
+													passwd[pwdcount++] = 2;
+													printf("2\n");
+												}
+												else if(nKeypadstate &(1<<2)){
+													Change_FREQ(RE);
+													delay(200);
+													STOP_FREQ();
+													passwd[pwdcount++] = 3;
+													printf("3\n");
+												}
+												else if(nKeypadstate &(1<<3)){
+													Change_FREQ(RE_S);
+													delay(200);
+													STOP_FREQ();
+													passwd[pwdcount++] = 4;
+													printf("4\n");
+												}
+												else if(nKeypadstate &(1<<4)){
+													Change_FREQ(MI);
+													delay(200);
+													STOP_FREQ();
+													passwd[pwdcount++] = 5;
+													printf("5\n");
+												}
+												else if(nKeypadstate &(1<<5)){
+													Change_FREQ(FA);
+													delay(200);
+													STOP_FREQ();
+													passwd[pwdcount++] = 6;
+													printf("6\n");
+												}
+												else if(nKeypadstate &(1<<6)){
+													Change_FREQ(FA_S);
+													delay(200);
+													STOP_FREQ();
+													passwd[pwdcount++] = 7;
+													printf("7\n");
+												}
+												else if(nKeypadstate &(1<<7)){
+													Change_FREQ(SOL);
+													delay(200);
+													STOP_FREQ();
+													passwd[pwdcount++] = 8;
+													printf("8\n");
+												}
+												else if(nKeypadstate &(1<<8)){
+													Change_FREQ(SOL_S);
+													delay(200);
+													STOP_FREQ();
+													passwd[pwdcount++] = 9;
+													printf("9\n");
+												}
+												else if(nKeypadstate &(1<<10)){
+													Change_FREQ(RA);
+													delay(200);
+													STOP_FREQ();
+													passwd[pwdcount++] = 0;
+													printf("0\n");
+												}
+
+											}
+
+										}
+										past_key=nKeypadstate;
+									}
+										
+								}
+								
+								else // 입력비밀번호와 기존 비밀번호 틀렸으면 INVALID PASSWORD 2초뒤 출력후 다시 입력하게
+								{
+									lcdClear(disp1);
+									lcdPosition(disp1,0,0);
+									lcdPuts(disp1,"Invalid password");
+									Change_FREQ(SevenScale(1)); // 레
+									delay(500);
+									STOP_FREQ();
+									delay(1500);
+									
+									lcdClear(disp1);
+									lcdPosition(disp1,0,0);
+									lcdPuts(disp1,"3.Change PW");
+									lcdPosition(disp1,0,1);
+									lcdPuts(disp1,"As is:");
+											
+									printf("x\n");
+									check = 0;
+									inputcount = 0;
+								
+								}
+							}
+								
+							else // 비밀번호 4번 입력하지 않고 엔터했따면 마찬가지로 INVALID PASSWORD 2초뒤 출력후 다시 입력하게
+							{
+								lcdClear(disp1);
+								lcdPosition(disp1,0,0);
+								lcdPuts(disp1,"Invalid password");
+								Change_FREQ(SevenScale(1)); // 레
+								delay(500);
+								STOP_FREQ();
+								delay(1500);
+									
+								lcdClear(disp1);
+								lcdPosition(disp1,0,0);
+								lcdPuts(disp1,"3.Change PW");
+								lcdPosition(disp1,0,1);
+								lcdPuts(disp1,"As is:");
+								printf("input 4number plz\n");
+								check = 0;
+								inputcount = 0;
+							}
+								
+						}
+						
+						else if((nKeypadstate &(1<<9))) //아래  방향키눌렸을때 소리만 나고 입력안되게 처리
+						{
+							Change_FREQ(SOL_S);
+							delay(200);
+							STOP_FREQ();
+						}
+
+						else{ //숫자 입력받는 부분 (이전 비번-as is)
+							if(nKeypadstate &(1<<0)){
+								input_passwd[inputcount++] = 1;
+								Change_FREQ(DO_L);
+								delay(200);
+								STOP_FREQ();
+								printf("1\n");
+							}
+							else if(nKeypadstate &(1<<1)){
+								Change_FREQ(DO_S);
+								delay(200);
+								STOP_FREQ();
+								input_passwd[inputcount++] = 2;
+								printf("2\n");
+							}
+							else if(nKeypadstate &(1<<2)){
+								Change_FREQ(RE);
+								delay(200);
+								STOP_FREQ();
+								input_passwd[inputcount++] = 3;
+								printf("3\n");
+							}
+							else if(nKeypadstate &(1<<3)){
+								Change_FREQ(MI);
+								delay(200);
+								STOP_FREQ();
+								input_passwd[inputcount++] = 4;
+								printf("4\n");
+							}
+							else if(nKeypadstate &(1<<4)){
+								Change_FREQ(FA);
+								delay(200);
+								STOP_FREQ();
+								input_passwd[inputcount++] = 5;
+								printf("5\n");
+							}
+							else if(nKeypadstate &(1<<5)){
+								Change_FREQ(FA_S);
+								delay(200);
+								STOP_FREQ();
+								input_passwd[inputcount++] = 6;
+								printf("6\n");
+							}
+							else if(nKeypadstate &(1<<6)){
+								Change_FREQ(SOL);
+								delay(200);
+								STOP_FREQ();
+								input_passwd[inputcount++] = 7;
+								printf("7\n");
+							}
+							else if(nKeypadstate &(1<<7)){
+								Change_FREQ(SOL_S);
+								delay(200);
+								STOP_FREQ();
+								input_passwd[inputcount++] = 8;
+								printf("8\n");
+							}
+							else if(nKeypadstate &(1<<8)){
+								Change_FREQ(RA);
+								delay(200);
+								STOP_FREQ();
+								input_passwd[inputcount++] = 9;
+								printf("9\n");
+							}
+							else if(nKeypadstate &(1<<10)){
+								Change_FREQ(SI);
+								delay(200);
+								STOP_FREQ();
+								input_passwd[inputcount++] = 0;
+								printf("0\n");
+							}	
+						}
+
+					}
+					past_key=nKeypadstate;
+				}
+			}
+			else if((nKeypadstate &(1<<3))) //4번 키패드 버튼   sound on/off
+			{
+				Change_FREQ(MI);
+				delay(200);
+				STOP_FREQ();
+				musicplay++;
+				if(musicplay==1){
+					lcdClear(disp1);
+					lcdPosition(disp1,0,0);
+					lcdPuts(disp1,"4.Sound off");
+					delay(2000);
+					lcdClear(disp1);
+					lcdPosition(disp1,0,0);		
+					lcdPuts(disp1,"1.Input PW");
+					lcdPosition(disp1,0,1);
+					lcdPuts(disp1,"2.Set PW");
+					lcdPosition(disp1,15,1);
+					lcdPuts(disp1,"v");
+					BUZZER_PIN=0; // 전역변수로 선언된 해당 변수의 핀번호를  0로 설정해서 부저 동작안하게
+				}
+				else if(musicplay==2){
+					lcdClear(disp1);
+					lcdPosition(disp1,0,0);
+					lcdPuts(disp1,"4.Sound on");
+					delay(2000);
+					lcdClear(disp1);
+					lcdPosition(disp1,0,0);		
+					lcdPuts(disp1,"1.Input PW");
+					lcdPosition(disp1,0,1);
+					lcdPuts(disp1,"2.Set PW");
+					lcdPosition(disp1,15,1);
+					lcdPuts(disp1,"v");
+					BUZZER_PIN=12;
+					musicplay=0;
+				}
+			}
+			
+		}
+		past_key=nKeypadstate ;
+	}
+	return 0;
+}

@@ -1,0 +1,232 @@
+#include<stdio.h>
+#include<wiringPi.h>
+#include<softTone.h>
+#include<softPwm.h>
+
+#define BUZZER_PIN 18
+#define DO_L 523
+#define RE 587
+#define MI 659
+#define FA 698
+#define SOL 784
+#define RA 880
+#define SI 987
+#define DO_H 1046
+
+#define KEYPAD_PB1 10
+#define KEYPAD_PB2 9
+#define KEYPAD_PB3 5
+#define KEYPAD_PB4 12
+#define KEYPAD_PB5 16
+#define KEYPAD_PB6 20
+#define KEYPAD_PB7 21
+#define KEYPAD_PB8 26
+#define KEYPAD_PB9 19
+#define KEYPAD_PB10 11	//*
+#define KEYPAD_PB11 13	//0
+#define KEYPAD_PB12 6	//#
+
+#define MAX_KEY_BT_NUM 12
+#define SERVO 24
+
+const int KeypadTable[12] = { KEYPAD_PB1, KEYPAD_PB2, KEYPAD_PB3, KEYPAD_PB4, KEYPAD_PB5, KEYPAD_PB6, 
+			KEYPAD_PB7, KEYPAD_PB8, KEYPAD_PB9, KEYPAD_PB10, KEYPAD_PB11, KEYPAD_PB12 };
+const char numberpad[12] = { '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12' };
+
+int KeypadRead(void) {
+	int i, nKeypadstate;
+	nKeypadstate = 0;
+	for (i=0; i<MAX_KEY_BT_NUM; i++) {
+		if (!digitalRead(KeypadTable[i])) {
+			nKeypadstate |= (1<<i);
+		}
+	}
+	return nKeypadstate;
+}
+
+unsigned int SevenScale (unsigned char scale) {
+	unsigned int _ret = 0;
+	switch (scale) {
+		case 0:
+			_ret = DO_L;
+			break;
+		case 1:
+			_ret = RE;
+			break;
+		case 2:
+			_ret = MI;
+			break;
+		case 3:
+			_ret = FA;
+			break;
+		case 4:
+			_ret = SOL;
+			break;
+		case 5:
+			_ret = RA;
+			break;
+		case 6:
+			_ret = SI;
+			break;
+		case 7:
+			_ret = DO_H;
+			break;
+	}
+	return _ret;
+}
+
+void Change_FREQ(unsigned int freq) {
+	softToneWrite (BUZZER_PIN, freq);
+}
+
+void STOP_FREQ(void) {
+	softToneWrite (BUZZER_PIN, 0);
+}
+
+void BUZZER_Init(void) {
+	softToneCreate(BUZZER_PIN);
+	STOP_FREQ();
+}
+
+int main(void) {
+	if (wiringPiSetupGpio() == -1)
+	return 1;		//GPIO 설정
+
+	Buzzer_Init();
+	softPwmCreate(SERVO, 0, 200);
+
+	unsigned char input[4] = {};	//비밀번호 저장
+	unsigned char input_value[5] = {};	//비밀번호 입력
+	int i;
+	int nKeypadstate;
+	int tag = 0;	//# 클릭 여부
+	int correct;	//비밀번호 일치 여부
+	int wrong_count = 0;	//틀린 횟수
+	int number_count = 0;	//숫자 입력 갯수
+	int input_key;		//입력 키
+	int past_key = -1;	//이전 키
+
+	for (i=0; i<MAX_KEY_BT_NUM; i++) {
+		pinMode(KeypadTable[i], INPUT);
+	}
+
+	while(1) {
+		nKeypadstate = KeypadRead();
+		input_key = -1;
+		for (i=0; i<MAX_KEY_BT_NUM; i++){
+			if((nKeypadState & (1<<i))) {
+				input_key = i;
+				Change_FREQ(SevenScale(0));
+				delay(10);
+				STOP_FREQ();
+			}
+		}
+		if ((input_key != -1 && input_key != past_key)) {		//중복 방지
+			if (input_key != 9 && input_key != 11) {	//*, #은 배열에 저장하지 않음
+				input_value[pw_count] = numberpad[input_key];
+				printf("%c\n", input_value[pw_count]);
+				pw_count++;
+			}
+			if (input_key == 11 && tag == -1) {	//마지막 key가 #이면서 tag가 -1일 때
+				for (int a=0; a<4; a++) {
+				input[a] = input_value[a];		//입력 배열 내용 → 비밀번호 배열
+				}
+			
+			for (int a=0; a<4; a++) {		//입력 배열 초기화
+				input_value[a] = -1;
+			}
+			tag = 0;
+			pw_count = 0;
+			printf("set compile %c %c %c %c\n", input[0], input[1], input[2], input[3]);
+			for (int a=0; a<=6;) {
+				Change_FREQ(SevenScale(a));
+				delay(300);
+				STOP_FREQ();
+				a+=3;
+			}
+		}
+		else if (input_key == 11) {		//마지막 key가 #일 때
+			tag = -1;
+			pw_count = 0;
+			printf("set password\n");
+		}
+
+		else if (input_key == 9 && tag == 0) {	//마지막 key가 *이면서 tag가 0일 때
+			for (int a=0; a<4; a++) {
+				if (input_value[a] != input[a]) {	//비밀번호 일치하지 않으면 correct -1
+					correct = -1;
+					break;
+				}
+				else if (input_value[a] == input[a]) {		//비밀번호 일치하면 correct 0 
+					correct = 0;
+				}
+			}
+			if (correct == 0) {	//일치
+				printf("open\n");
+				wrong_count=0;
+
+				Change_FREQ(SevenScale(3));
+				delay(250);
+				STOP_FREQ();
+				Change_FREQ(SevenScale(1));
+				delay(250);
+				STOP_FREQ();
+				Change_FREQ(SevenScale(5));
+				delay(250);
+				STOP_FREQ();
+				Change_FREQ(SevenScale(3));
+				delay(250);
+				STOP_FREQ();
+				Change_FREQ(SevenScale(7));
+				delay(250);
+				STOP_FREQ();
+
+				softPwmWrite(SERVO, 25);
+				delay(2000);
+				softPwmWrite(SERVO, 15);
+			}
+			else if (correct == -1) {	//불일치
+				printf("틀린 비밀번호입니다 !\n");
+				wrong_count++;
+
+				if (wrong_count == 3) {	//3번 불일치
+ 					Change_FREQ(SevenScale(7));
+					delay(300);
+					STOP_FREQ();
+ 					Change_FREQ(SevenScale(5));
+					delay(300);
+					STOP_FREQ();
+ 					Change_FREQ(SevenScale(3));
+					delay(300);
+					STOP_FREQ();
+
+					wrong_count = 0;
+					printf("10초 후 다시 입력해주세요.\n");
+
+					for (int a=0; a<10; a++) {
+						delay(1000);
+						printf("%ds\n", 10-a);
+					}
+					printf("try again \n");
+				}
+
+					else {
+						Change_FREQ(SevenScale(6));
+						delay(1000);
+						STOP_FREQ();
+					}
+				}
+				pw_count = 0;
+			}
+			past_key = input_key;	//패스트키와 누른키 초기화
+		}
+	}
+	return 0;
+}
+
+
+	
+			
+
+
+
